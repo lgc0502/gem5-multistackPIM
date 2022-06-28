@@ -56,6 +56,7 @@
 #include "debug/XBar.hh"
 #include "mem/scratchpad_mem.hh"
 #include "sim/system.hh"
+#include "sim/se_mode_system.hh"
 
 BaseXBar::BaseXBar(const BaseXBarParams *p)
     : ClockedObject(p),
@@ -83,13 +84,26 @@ void
 BaseXBar::init()
 {
     // Get PIM system SimObject
-    _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system"));
-    fatal_if(!_pimSystem, "Cannot find SimObject pim_system");
+    if(!SEModeSystem::MultipleSESystem) {
+        _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system"));
+        fatal_if(!_pimSystem, "Xbar : Cannot find SimObject pim_system");
 
-    // Get PIM SPM
-    pimSpm = dynamic_cast<ScratchpadMemory *>
-             (SimObject::find("pim_system.spm"));
-    fatal_if(!pimSpm, "Cannot find SimObject pim_system.spm");
+        // Get PIM SPM
+        pimSpm = dynamic_cast<ScratchpadMemory *>
+                (SimObject::find("pim_system.spm"));
+        fatal_if(!pimSpm, "Cannot find SimObject pim_system.spm");
+    } else {
+        _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system0"));
+        fatal_if(!_pimSystem, "Xbar : Cannot find SimObject pim_system");
+
+        // Get PIM SPM
+        for(int i=0; i<SEModeSystem::MemStackNum; i++) {
+            std::string systemname = SEModeSystem::SEModeSystemsName[i];
+            pimSpms.push_back(dynamic_cast<ScratchpadMemory *>
+                (SimObject::find(strcat(&systemname[0], ".spm"))));
+        }
+        fatal_if((!pimSpms.size()), "Cannot find SimObject pim_system spm");
+    }    
 }
 
 Port &
@@ -119,10 +133,16 @@ BaseXBar::pktFromPIM(PacketPtr pkt) const
 bool
 BaseXBar::pktToPimSpm(PacketPtr pkt) const
 {
-    if (pkt->getAddrRange().isSubset(pimSpm->getAddrRange()))
-        return true;
-    else
-        return false;
+    if(!SEModeSystem::MultipleSESystem) {
+        if (pkt->getAddrRange().isSubset(pimSpm->getAddrRange()))
+            return true;
+    } else {
+        for(int i=0; i<pimSpms.size(); i++) {
+            if (pkt->getAddrRange().isSubset(pimSpms[i]->getAddrRange()))
+                return true;
+        }
+    }
+    return false;
 }
 
 void

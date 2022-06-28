@@ -13,8 +13,15 @@ belongSEsys(const System *const _system)
 {
     assert(_system);
 
-    if (_system->name() == SEModeSystemName)
-        return true;
+    if(!MultipleSESystem) {
+        if (_system->name() == SEModeSystemName)
+            return true;
+    } else {
+        for(int i=0; i<SEModeSystemsName.size(); i++){
+            if (_system->name() == SEModeSystemsName[i])
+                return true;
+        }
+    }
 
     return false;
 }

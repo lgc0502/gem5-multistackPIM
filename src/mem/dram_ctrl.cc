@@ -55,6 +55,7 @@
 #include "debug/Drain.hh"
 #include "debug/QOS.hh"
 #include "sim/system.hh"
+#include "sim/se_mode_system.hh"
 
 using namespace std;
 using namespace Data;
@@ -273,9 +274,13 @@ DRAMCtrl::init()
         }
     }
 
-    // Get PIM system SimObject
-    _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system"));
-    fatal_if(!_pimSystem, "Cannot find SimObject pim_system");
+    if(!SEModeSystem::MultipleSESystem) {
+        // Get PIM system SimObject
+        _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system"));
+    } else {
+        _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system0"));
+    }
+    fatal_if(!_pimSystem, "dramCtrl : Cannot find SimObject pim_system");
 }
 
 void

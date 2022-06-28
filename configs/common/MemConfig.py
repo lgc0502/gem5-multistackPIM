@@ -174,10 +174,113 @@ def config_mem(options, system):
     from m5.util import convert
     nvm_end = opt_nvm_start + convert.toMemorySize(options.nvm_size) - 1
 
+    cls = get(opt_mem_type)
+    cls_nvm = get(opt_nvm_type)
+    mem_ctrls = []
+    
+    # multistack PIM
+    # If NVM is used, the memory type corresponding to the memory range is
+    # distinguished.
+    from m5.util import fatal
+    from m5.objects import AddrRange
+    
+    def get_pim_memranges(input_ranges):
+        ranges = []
+        for range in input_ranges.split( ):
+            begin_addr = int(range.split("|", 1)[0], 0)
+            end_addr = int(range.split("|", 1)[1], 0)        
+            ranges.append(AddrRange(begin_addr,
+                                    size = end_addr - begin_addr + 1))
+        return ranges
+
+    
+    hybridstack_memranges = []
+    dramstack_memranges = []
+    dramstack = 1
+    
+    # multistack PIM: PIM address range check
+    if options.pim_hybrid_stack:
+        dramstack = 0
+        if options.pim_hybridstack_ranges is None:
+            fatal("Address ranges of hybrid stack  is not set")
+        hybridstack_memranges = get_pim_memranges(options.pim_hybridstack_ranges)
+        if options.pim_dramstack_ranges is not None:
+            dramstack_memranges = get_pim_memranges(options.pim_dramstack_ranges)
+            dramstack = 1
+    
+    mem_type_ranges = [[] for i in range(options.pim_num_mem_stacks + dramstack)]
+    mem_type_ranges_cls = [[] for i in range(options.pim_num_mem_stacks + dramstack)]
+    stack_size = convert.toMemorySize(options.nvm_size) / options.pim_num_mem_stacks
+
+    for r in system.mem_ranges:
+        start = long(r.start)
+        end = long(r.end)
+        if options.nvm and start <= opt_nvm_start and nvm_end <= end:
+            # NVM memory controller
+            for i in range(options.pim_num_mem_stacks):
+                mem_type_ranges[i + dramstack].append(AddrRange(opt_nvm_start + stack_size * i,
+                                                        size = stack_size))
+                mem_type_ranges_cls[i + dramstack].append(cls_nvm)
+            if not options.pim_hybrid_stack:
+                # DRAM memory controller
+                if start != opt_nvm_start:
+                    mem_type_ranges[0].append(AddrRange(start,
+                                                            size = opt_nvm_start - start))
+                    mem_type_ranges_cls[0].append(cls)
+                # DRAM memory controller
+                if nvm_end != end:
+                    mem_type_ranges[0].append(AddrRange(nvm_end,
+                                                            size = end - nvm_end))
+                    mem_type_ranges_cls[0].append(cls)
+        else:
+            # DRAM memory controller
+            if not options.pim_hybrid_stack:
+                mem_type_ranges[0].append(r)
+                mem_type_ranges_cls[0].append(cls)
+
+        if options.pim_hybrid_stack:
+            for pr in dramstack_memranges:
+                pr_start = long(pr.start)
+                pr_end = long(pr.end)
+                if pr_start >= start and pr_start < end:
+                    if pr_end <= end:
+                        mem_type_ranges[0].append(AddrRange(pr_start,
+                                                            size = pr_end - pr_start + 1))
+                        mem_type_ranges_cls[0].append(cls)
+                    if pr_end > end:
+                        mem_type_ranges[0].append(AddrRange(pr_start,
+                                                            size = end - pr_start + 1))
+                        mem_type_ranges_cls[0].append(cls)
+                if pr_end <= end and pr_end > start:
+                    if pr_start < start:
+                        mem_type_ranges[0].append(AddrRange(start,
+                                                            size = pr_end - start + 1))
+                        mem_type_ranges_cls[0].append(cls)
+            for i, pr in enumerate(hybridstack_memranges):
+                pr_start = long(pr.start)
+                pr_end = long(pr.end)
+                if pr_start >= start and pr_start < end:
+                    if pr_end <= end:
+                        mem_type_ranges[i+dramstack].append(AddrRange(pr_start,
+                                                            size = pr_end - pr_start + 1))
+                        mem_type_ranges_cls[i+dramstack].append(cls)
+                    if pr_end > end:
+                        mem_type_ranges[i+dramstack].append(AddrRange(pr_start,
+                                                            size = end - pr_start + 1))
+                        mem_type_ranges_cls[i+dramstack].append(cls)
+                if pr_end <= end and pr_end > start:
+                    if pr_start < start:
+                        mem_type_ranges[i+dramstack].append(AddrRange(start,
+                                                            size = pr_end - start + 1))
+                        mem_type_ranges_cls[i+dramstack].append(cls)
+    for i, m in  enumerate(mem_type_ranges):
+        for r in m:
+            print(str(i) + ":" + str(r.start) + " <-> " + str(r.end))
     if options.pim_baremetal or options.pim_se:
+        # multistack PIM: get number of memory subsystems      
         from pim import PIM
-        subsystem = PIM.build_pim_mem_subsystem(options, system)
-        xbar = subsystem.xbar
+        subsystem = PIM.build_pim_mem_subsystem(options, system, dramstack)
+
     else:
         if opt_mem_type == "HMC_2500_1x32":
             HMChost = HMC.config_hmc_host_ctrl(options, system)
@@ -198,6 +301,8 @@ def config_mem(options, system):
         return
 
     if opt_external_memory_system:
+        if options.pim_baremetal or options.pim_se:
+            fatal("external_memory_system is not support")
         subsystem.external_memory = m5.objects.ExternalSlave(
             port_type=opt_external_memory_system,
             port_data="init_mem0", port=xbar.master,
@@ -206,15 +311,12 @@ def config_mem(options, system):
         return
 
     nbr_mem_ctrls = opt_mem_channels
+
     import math
-    from m5.util import fatal
+    
     intlv_bits = int(math.log(nbr_mem_ctrls, 2))
     if 2 ** intlv_bits != nbr_mem_ctrls:
         fatal("Number of memory channels must be a power of 2")
-
-    cls = get(opt_mem_type)
-    cls_nvm = get(opt_nvm_type)
-    mem_ctrls = []
 
     if opt_elastic_trace_en and not issubclass(cls, m5.objects.SimpleMemory):
         fatal("When elastic trace is enabled, configure mem-type as "
@@ -226,63 +328,50 @@ def config_mem(options, system):
     # range of workloads.
     intlv_size = max(128, system.cache_line_size.value)
 
-    # If NVM is used, the memory type corresponding to the memory range is
-    # distinguished.
-    from m5.objects import AddrRange
-    mem_type_ranges = []
-    mem_type_ranges_cls = []
-    for r in system.mem_ranges:
-        start = long(r.start)
-        end = long(r.end)
-        if options.nvm and start <= opt_nvm_start and nvm_end <= end:
-            if start != opt_nvm_start:
-                mem_type_ranges.append(AddrRange(start,
-                                                 size = opt_nvm_start - start))
-                mem_type_ranges_cls.append(cls)
-
-            mem_type_ranges.append(AddrRange(opt_nvm_start, size = nvm_end -
-                                                            opt_nvm_start + 1))
-            mem_type_ranges_cls.append(cls_nvm)
-
-            if nvm_end != end:
-                mem_type_ranges.append(AddrRange(nvm_end + 1,
-                                                 size = end - nvm_end))
-                mem_type_ranges_cls.append(cls)
-        else:
-            mem_type_ranges.append(r)
-            mem_type_ranges_cls.append(cls)
-
     # For every range (most systems will only have one), create an
     # array of controllers and set their parameters to match their
     # address mapping in the case of a DRAM
-    for r in range(len(mem_type_ranges)):
-        for i in range(nbr_mem_ctrls):
-            mem_ctrl = create_mem_ctrl(mem_type_ranges_cls[r],
-                                       mem_type_ranges[r], i,
-                                       nbr_mem_ctrls, intlv_bits, intlv_size)
-            # Set the number of ranks based on the command-line
-            # options if it was explicitly set
-            if issubclass(mem_type_ranges_cls[r], m5.objects.DRAMCtrl) and \
-                opt_mem_ranks:
-                mem_ctrl.ranks_per_channel = opt_mem_ranks
+    for s, stack in enumerate(mem_type_ranges):
+        for r in range(len(stack)):
+            for i in range(nbr_mem_ctrls):
+                mem_ctrl = create_mem_ctrl(mem_type_ranges_cls[s][r],
+                                        mem_type_ranges[s][r], i,
+                                        nbr_mem_ctrls, intlv_bits, intlv_size)
+                # Set the number of ranks based on the command-line
+                # options if it was explicitly set
+                if issubclass(mem_type_ranges_cls[s][r], m5.objects.DRAMCtrl) and \
+                    opt_mem_ranks:
+                    mem_ctrl.ranks_per_channel = opt_mem_ranks
 
-            if opt_elastic_trace_en:
-                mem_ctrl.latency = '1ns'
-                print("For elastic trace, over-riding Simple Memory "
-                    "latency to 1ns.")
+                if opt_elastic_trace_en:
+                    mem_ctrl.latency = '1ns'
+                    print("For elastic trace, over-riding Simple Memory "
+                        "latency to 1ns.")
 
-            if options.pim_baremetal or options.pim_se:
-                mem_ctrl.bw_ratio = options.pim_bandwidth_ratio
+                if options.pim_baremetal or options.pim_se:
+                    mem_ctrl.bw_ratio = options.pim_bandwidth_ratio
 
-            mem_ctrls.append(mem_ctrl)
+                mem_ctrls.append(mem_ctrl)
+        subsystem[s].mem_ctrls = mem_ctrls
+        mem_ctrls = []
 
-    subsystem.mem_ctrls = mem_ctrls
+    # Set bridge range in subsystems
+    for s, stack in enumerate(subsystem):
+        stack.bridge.ranges = [r for r in mem_type_ranges[s]]
+        if s >= dramstack:
+            print(s)
+            stack.bridge.ranges.append( AddrRange(options.pim_spm_start + 
+                           convert.toMemorySize(options.pim_spm_size) * (s-dramstack),
+                           size = options.pim_spm_size))
+
 
     # Connect the controllers to the membus
-    for i in range(len(subsystem.mem_ctrls)):
-        if options.pim_baremetal or options.pim_se:
-            subsystem.mem_ctrls[i].port = xbar.master
-        else:
+    if options.pim_baremetal or options.pim_se:
+        for s in subsystem:
+            for i in range(len(s.mem_ctrls)):
+                s.mem_ctrls[i].port = s.xbar.master
+    else:
+        for i in range(len(subsystem.mem_ctrls)):
             if opt_mem_type == "HMC_2500_1x32":
                 subsystem.mem_ctrls[i].port = xbar[i/4].master
                 # Set memory device size. There is an independent controller

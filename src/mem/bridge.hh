@@ -323,6 +323,7 @@ class Bridge : public ClockedObject
     const bool ideal;
     System *_pimSystem;
     ScratchpadMemory *pimSpm;
+    std::vector <ScratchpadMemory *> pimSpms;
     bool pktFromPIM(PacketPtr pkt) const;
     bool pktToPimSpm(PacketPtr pkt) const;
 

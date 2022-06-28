@@ -340,6 +340,7 @@ def dot_create_dvfs_nodes(simNode, callgraph, domain=None):
 
 def do_dot(root, outdir, dotFilename):
     if not pydot:
+        warn("failed to generate dot output because pydot")
         return
     # * use ranksep > 1.0 for for vertical separation between nodes
     # especially useful if you need to annotate edges using e.g. visio

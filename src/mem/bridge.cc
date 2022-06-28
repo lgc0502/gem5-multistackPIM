@@ -55,6 +55,7 @@
 #include "mem/scratchpad_mem.hh"
 #include "params/Bridge.hh"
 #include "sim/system.hh"
+#include "sim/se_mode_system.hh"
 
 Bridge::BridgeSlavePort::BridgeSlavePort(const std::string& _name,
                                          Bridge& _bridge,
@@ -114,14 +115,27 @@ Bridge::init()
     // notify the master side  of our address ranges
     slavePort.sendRangeChange();
 
-    // get PIM system SimObject
-    _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system"));
-    fatal_if(!_pimSystem, "Cannot find SimObject pim_system");
+    if(!SEModeSystem::MultipleSESystem) {
+        // Get PIM system SimObject
+        _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system"));
+        fatal_if(!_pimSystem, "birdge : Cannot find SimObject pim_system");
 
-    // get PIM SPM
-    pimSpm = dynamic_cast<ScratchpadMemory *>
-             (SimObject::find("pim_system.spm"));
-    fatal_if(!pimSpm, "Cannot find SimObject pim_system.spm");
+        // Get PIM SPM
+        pimSpm = dynamic_cast<ScratchpadMemory *>
+                (SimObject::find("pim_system.spm"));
+        fatal_if(!pimSpm, "Cannot find SimObject pim_system.spm");
+    } else {
+        _pimSystem = dynamic_cast<System *>(SimObject::find("pim_system0"));
+        fatal_if(!_pimSystem, "Xbar : Cannot find SimObject pim_system");
+
+        // Get PIM SPM
+        for(int i=0; i<SEModeSystem::MemStackNum; i++) {
+            std::string systemname = SEModeSystem::SEModeSystemsName[i];
+            pimSpms.push_back(dynamic_cast<ScratchpadMemory *>
+                (SimObject::find(strcat(&systemname[0], ".spm"))));
+        }
+        fatal_if((!pimSpms.size()), "Cannot find SimObject pim_system spm");
+    }    
 }
 
 bool
@@ -134,10 +148,16 @@ Bridge::pktFromPIM(PacketPtr pkt) const
 bool
 Bridge::pktToPimSpm(PacketPtr pkt) const
 {
-    if (pkt->getAddrRange().isSubset(pimSpm->getAddrRange()))
-        return true;
-    else
-        return false;
+    if(!SEModeSystem::MultipleSESystem) {
+        if (pkt->getAddrRange().isSubset(pimSpm->getAddrRange()))
+            return true;
+    } else {
+        for(int i=0; i<pimSpms.size(); i++) {
+            if (pkt->getAddrRange().isSubset(pimSpms[i]->getAddrRange()))
+                return true;
+        }
+    }
+    return false;
 }
 
 bool

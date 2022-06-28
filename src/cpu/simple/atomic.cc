@@ -59,6 +59,7 @@
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
 #include "sim/system.hh"
+#include "sim/se_mode_system.hh"
 
 using namespace std;
 using namespace TheISA;
@@ -425,7 +426,6 @@ AtomicSimpleCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
     SimpleExecContext& t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
     static uint8_t zero_array[64] = {};
-
     if (data == NULL) {
         assert(size <= 64);
         assert(flags & Request::STORE_NO_DATA);

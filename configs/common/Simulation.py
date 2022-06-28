@@ -41,6 +41,7 @@
 
 from __future__ import print_function
 from __future__ import absolute_import
+from lib2to3.pytree import convert
 
 import sys
 from os import getcwd
@@ -612,14 +613,17 @@ def run(options, root, testsys, cpu_class):
     if hasattr(options, "pim_se") and \
         options.pim_se and options.checkpoint_restore == None:
         # Map SPM address range to SE PIM
-        root.pim_system.cpu.workload[0].map(
-            long(root.pim_system.spm.range.start),
-            long(root.pim_system.spm.range.start),
-            long(root.pim_system.spm.range.size()),
-            False)
+        for pim_sys in root.pim_system:
+            # GC TODO: spm address map
+            pim_sys.cpu.workload[0].map(
+                long(root.pim_system[0].spm.range.start),
+                long(pim_sys.spm.range.start),
+                long(pim_sys.spm.range.size()),
+                False)
         # Map all system address range to SE PIM
-        for r in testsys.mem_ranges:
-            root.pim_system.cpu.workload[0].map(long(r.start), long(r.start),
+        for pim_sys in root.pim_system:
+            for r in testsys.mem_ranges:
+                pim_sys.cpu.workload[0].map(long(r.start), long(r.start),
                                                 long(r.size()), False)
 
     # Initialization is complete.  If we're not in control of simulation
@@ -663,7 +667,6 @@ def run(options, root, testsys, cpu_class):
     if options.checkpoint_restore != None and maxtick < cpt_starttick:
         fatal("Bad maxtick (%d) specified: " \
               "Checkpoint starts starts from tick: %d", maxtick, cpt_starttick)
-
     if options.standard_switch or cpu_class:
         if options.standard_switch:
             print("Switch at instruction count:%s" %

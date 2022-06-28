@@ -98,7 +98,7 @@ SETranslatingPortProxy::tryWriteBlob(Addr addr, const uint8_t *p,
 
     for (ChunkGenerator gen(addr, size, PageBytes); !gen.done(); gen.next()) {
         Addr paddr;
-
+        
         if (!pTable->translate(gen.addr(), paddr)) {
             if (allocating == Always) {
                 process->allocateMem(roundDown(gen.addr(), PageBytes),

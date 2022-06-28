@@ -68,6 +68,17 @@ def define_options(parser):
                       default=params.SE_ERROUT,
                       help="Redirect stderr to a file")
 
+    # multistack PIM
+    parser.add_option("--pim-num-mem-stacks", action="store", type="int",
+                      default=1,
+                      help="Specify the number of memory stack you need")       
+    parser.add_option("--pim-hybrid-stack", action="store_true",
+                      help="Build DRAM-NVM hybrid pim stack memory system")
+    parser.add_option("--pim-hybridstack-ranges", action="store", type="string",
+                      help="Specify the ddr4 address range of each pim memory stack")
+    parser.add_option("--pim-dramstack-ranges", action="store", type="string")
+                        
+
 ##
 ## PIM Related Class
 ##
@@ -109,38 +120,64 @@ class PIMSESystem(System):
 ##
 ## PIM Function
 ##
-def build_pim_mem_subsystem(options, sys):
+# build pim memory subsystem
+def build_pim_mem_subsystem(options, sys, dramstack):
     if not hasattr(sys, 'membus'):
         fatal("Host system doesn't has attribute 'membus'")
+    
+    # sys.memsubsystem = SubSystem()
 
-    sys.memsubsystem = SubSystem()
+    # sys.memsubsystem.bridge = Bridge(req_size = 32, resp_size = 32,
+    #                                     delay = params.BRIDGE_MEMSUBSYSTEM_DELAY)
+    # sys.memsubsystem.bridge.ranges = sys.mem_ranges
+    # sys.memsubsystem.bridge.ranges.append(
+    #     AddrRange(options.pim_spm_start, size = options.pim_spm_size))
 
-    sys.memsubsystem.bridge = Bridge(req_size = 32, resp_size = 32,
-                                     delay = params.BRIDGE_MEMSUBSYSTEM_DELAY)
-    sys.memsubsystem.bridge.ranges = sys.mem_ranges
-    sys.memsubsystem.bridge.ranges.append(
-        AddrRange(options.pim_spm_start, size = options.pim_spm_size))
+    # sys.memsubsystem.xbar_clk_domain = SrcClockDomain(clock = '0.1GHz',
+    #                                     voltage_domain = VoltageDomain())
+    # sys.memsubsystem.xbar = NoncoherentXBar(clk_domain = \
+    #                                         sys.memsubsystem.xbar_clk_domain)
+    # sys.memsubsystem.xbar.frontend_latency = \
+    #         params.BUS_INTERNAL_FRONTEND_LATENCY
+    # sys.memsubsystem.xbar.forward_latency = \
+    #         params.BUS_INTERNAL_FORWARD_LATENCY
+    # sys.memsubsystem.xbar.response_latency = \
+    #         params.BUS_INTERNAL_RESPONSE_LATENCY
+    # sys.memsubsystem.xbar.width = params.BUS_INTERNAL_WIDTH
+    # sys.memsubsystem.xbar.badaddr_responder = BadAddr(warn_access = "warn")
+    # sys.memsubsystem.xbar.default = sys.memsubsystem.xbar.badaddr_responder.pio
 
-    sys.memsubsystem.xbar_clk_domain = SrcClockDomain(clock = '0.1GHz',
-                                       voltage_domain = VoltageDomain())
-    sys.memsubsystem.xbar = NoncoherentXBar(clk_domain = \
-                                            sys.memsubsystem.xbar_clk_domain)
-    sys.memsubsystem.xbar.frontend_latency = \
-        params.BUS_INTERNAL_FRONTEND_LATENCY
-    sys.memsubsystem.xbar.forward_latency = \
-        params.BUS_INTERNAL_FORWARD_LATENCY
-    sys.memsubsystem.xbar.response_latency = \
-        params.BUS_INTERNAL_RESPONSE_LATENCY
-    sys.memsubsystem.xbar.width = params.BUS_INTERNAL_WIDTH
-    sys.memsubsystem.xbar.badaddr_responder = BadAddr(warn_access = "warn")
-    sys.memsubsystem.xbar.default = sys.memsubsystem.xbar.badaddr_responder.pio
+    # sys.membus.master = sys.memsubsystem.bridge.slave
+    # sys.memsubsystem.bridge.master = sys.memsubsystem.xbar.slave
+    
+    sys.memsubsystem = [ SubSystem() for r in range(options.pim_num_mem_stacks + dramstack) ]
+    for i, m in enumerate(sys.memsubsystem):
+        m.bridge = Bridge(req_size = 32, resp_size = 32,
+                          delay = params.BRIDGE_MEMSUBSYSTEM_DELAY)
+        # m.bridge.ranges = sys.mem_ranges
+        # GC TODO: append pim_spm range in bridge
+        # if i>0:
+        #     m.bridge.ranges.append( AddrRange(options.pim_spm_start + 
+        #                    convert.toMemorySize(options.pim_spm_size) * (i-1),
+        #                    size = options.pim_spm_size))
+        # for r in m.bridge.ranges:
+        #     print("bridge.ranges :"+str(i)+" :"+str(r) + " " + str(r.size()))
+        m.xbar_clk_domain = SrcClockDomain(clock = '0.1GHz',
+                                           voltage_domain = VoltageDomain())
+        m.xbar = NoncoherentXBar(clk_domain = m.xbar_clk_domain)
+        m.xbar.frontend_latency = params.BUS_INTERNAL_FRONTEND_LATENCY
+        m.xbar.forward_latency = params.BUS_INTERNAL_FORWARD_LATENCY
+        m.xbar.response_latency = params.BUS_INTERNAL_RESPONSE_LATENCY
+        m.xbar.width = params.BUS_INTERNAL_WIDTH
+        m.xbar.badaddr_responder = BadAddr(warn_access = "warn")
+        m.xbar.default = m.xbar.badaddr_responder.pio
 
-    sys.membus.master = sys.memsubsystem.bridge.slave
-    sys.memsubsystem.bridge.master = sys.memsubsystem.xbar.slave
-
+        sys.membus.master = m.bridge.slave
+        m.bridge.master = m.xbar.slave
+        
     return sys.memsubsystem
 
-def build_pim_system(options):
+def build_pim_system(options, stackId):
     (CPUClass, MemMode, FutureClass) = Simulation.setCPUClass(options)
 
     # PIM mode check
@@ -200,12 +237,11 @@ def build_pim_system(options):
 
         se_mem_start = options.pim_se_mem_start
         if se_mem_start is None:
-            se_mem_start = 0x0
+            fatal("SE memory start address is not set")
 
         spm_start = options.pim_spm_start
         if spm_start is None:
-            spm_start = se_mem_start + \
-                convert.toMemorySize(options.pim_se_mem_size)
+            fatal("SPM memory start address is not set")
 
         # PIM memory check
         if spm_start <= se_mem_start:
@@ -216,11 +252,15 @@ def build_pim_system(options):
             fatal("The starting address of SPM cannot overlap with the SE "
                   "memory range")
 
-        self.mem_ranges = [AddrRange(se_mem_start,
+        self.mem_ranges = [AddrRange(se_mem_start + 
+                                     convert.toMemorySize(options.pim_se_mem_size) * 
+                                     stackId,
                                      size = options.pim_se_mem_size)]
 
-        self.spm = ScratchpadMemory(range = AddrRange(spm_start, size = \
-                                                      options.pim_spm_size))
+        self.spm = ScratchpadMemory(range = AddrRange(spm_start + 
+                                            convert.toMemorySize(options.pim_spm_size) * 
+                                            stackId,
+                                            size = options.pim_spm_size))
         self.spm.in_addr_map = False
         self.spm.conf_table_reported = False
         self.spm.port = self.pimbus.master
@@ -258,8 +298,13 @@ def build_pim_system(options):
     self.cpu.connectAllPorts(self.pimbus)
 
     self.spm.support_flush = True
-    self.spm.reg_flush_addr = options.pim_spm_reg_flush_addr
-    self.spm.reg_flush_size = options.pim_spm_reg_flush_size
+    if options.pim_num_mem_stacks is 1:
+        self.spm.reg_flush_addr = options.pim_spm_reg_flush_addr
+        self.spm.reg_flush_size = options.pim_spm_reg_flush_size
+    else:
+        self.spm.reg_flush_addr = options.pim_spm_start + convert.toMemorySize(
+                                  options.pim_spm_size) * stackId
+        self.spm.reg_flush_size = self.spm.reg_flush_addr + 8
 
     if options.pim_baremetal:
         self.kernel = options.pim_kernel
@@ -274,27 +319,29 @@ def build_pim_system(options):
             process.errout = options.pim_se_errout
 
         self.cpu.workload = [process]
-
     return self
 
-def connect_to_host_system(options, sys, pim_sys):
+def connect_to_host_system(options, sys, pim_sys, stackId):
     if buildEnv['TARGET_ISA'] not in ['arm', 'x86']:
         fatal("PIM does not support %s ISA!", buildEnv['TARGET_ISA'])
 
     if not hasattr(sys, 'memsubsystem'):
         fatal("Host system doesn't has attribute 'memsubsystem'")
 
-    if not hasattr(sys.memsubsystem, 'xbar'):
+    if not hasattr(sys.memsubsystem[0], 'xbar'):
         fatal("Host mem subsystem doesn't has attribute 'xbar'")
 
     if not hasattr(pim_sys, 'pimbus'):
         fatal("PIM system doesn't has attribute 'pimbus'")
+    
+    dramstack = len(sys.memsubsystem) - options.pim_num_mem_stacks
 
-    sys.memsubsystem.topimbridge = PIMBridge(ranges = [pim_sys.spm.range])
-    pim_sys.tohostbridge = PIMBridge(ranges = sys.mem_ranges)
+    sys.memsubsystem[stackId+dramstack].topimbridge = PIMBridge(ranges = [pim_sys.spm.range])
+    pim_sys.tohostbridge = PIMBridge(ranges = [ sys.memsubsystem[stackId+dramstack].bridge.ranges[i]
+                            for i in range(len(sys.memsubsystem[stackId+dramstack].bridge.ranges) - 1) ] )
 
-    sys.memsubsystem.xbar.master = sys.memsubsystem.topimbridge.slave
-    sys.memsubsystem.topimbridge.master = pim_sys.pimbus.slave
+    sys.memsubsystem[stackId+dramstack].xbar.master = sys.memsubsystem[stackId+dramstack].topimbridge.slave
+    sys.memsubsystem[stackId+dramstack].topimbridge.master = pim_sys.pimbus.slave
 
     pim_sys.pimbus.master = pim_sys.tohostbridge.slave
-    pim_sys.tohostbridge.master = sys.memsubsystem.xbar.slave
+    pim_sys.tohostbridge.master = sys.memsubsystem[stackId+dramstack].xbar.slave

@@ -222,7 +222,6 @@ X86_64Process::initState()
     };
     initVirtMem.writeBlob(vsyscallPage.base + vsyscallPage.vgettimeofdayOffset,
             vgettimeofdayBlob, sizeof(vgettimeofdayBlob));
-
     if (kvmInSE) {
         PortProxy physProxy = system->physProxy;
 

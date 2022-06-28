@@ -385,7 +385,7 @@ Process::serialize(CheckpointOut &cp) const
      * Checkpoints for file descriptors currently do not work. Need to
      * come back and fix them at a later date.
      */
-
+    // multistack PIM: TODO: check this warning
     warn("Checkpoints for file descriptors currently do not work.");
 #if 0
     for (int x = 0; x < fds->getSize(); x++)

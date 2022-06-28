@@ -2,6 +2,8 @@
 #define __SIM_SE_MODE_SYSTEM_HH__
 
 #include <string>
+#include <vector>
+
 
 class BaseCPU;
 class System;
@@ -10,6 +12,10 @@ class ThreadContext;
 namespace SEModeSystem {
 
 extern std::string SEModeSystemName;
+/* multistack PIM */
+extern bool MultipleSESystem;
+extern int MemStackNum;
+extern std::vector<std::string> SEModeSystemsName;
 
 /**
  * Return true if the object belongs to the specific SE mode system, and vice

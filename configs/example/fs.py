@@ -45,6 +45,7 @@ from __future__ import print_function
 from __future__ import absolute_import
 
 import optparse
+import math
 import sys
 
 import m5
@@ -337,6 +338,19 @@ else:
 
 np = options.num_cpus
 
+# multistack PIM: 
+def is_power_of_2(n):
+    return (math.ceil(math.log(n, 2)) == math.floor(math.log(n, 2)))
+    
+# pim stack num check
+if options.pim_num_mem_stacks is None:
+    fatal("number of pim memory stacks is not set")
+if options.pim_num_mem_stacks is 0:
+    fatal("number of pim memory stacks cannot be 0")
+elif is_power_of_2(options.pim_num_mem_stacks) is False:
+    fatal("number of pim memory stacks must be in powers of 2")
+mp = options.pim_num_mem_stacks
+
 test_sys = build_test_system(np)
 if len(bm) == 2:
     drive_sys = build_drive_system(np)
@@ -359,12 +373,34 @@ else:
     print("Error I don't know how to create more than 2 systems.")
     sys.exit(1)
 
-if options.pim_baremetal or options.pim_se:
-    root.pim_system = PIM.build_pim_system(options)
+# multistack PIM:
+""" if options.pim_baremetal or options.pim_se:
+    root.pim_system = PIM.build_pim_system(options, nm)
     PIM.connect_to_host_system(options, test_sys, root.pim_system)
 
     if options.pim_se:
+        root.se_mode_system_name = root.pim_system.get_name() """
+
+if options.pim_baremetal:
+    if mp > 1:    
+        warn("baremetal pim only support one stack pim system")
+    root.pim_system = PIM.build_pim_system(options, nm)
+    PIM.connect_to_host_system(options, test_sys, root.pim_system)
+
+if options.pim_se:
+    root.mem_stack_num = mp
+    # GC TODO: delete multiple_se_system 
+    root.multiple_se_system = True if int(root.mem_stack_num) > 1 else False
+    if not root.multiple_se_system:
+        # GC TODO: stackId = 0?
+        root.pim_system = PIM.build_pim_system(options, 0)
+        PIM.connect_to_host_system(options, test_sys, root.pim_system, 0)
         root.se_mode_system_name = root.pim_system.get_name()
+    else:
+        root.pim_system = [PIM.build_pim_system(options, i) for i in range(root.mem_stack_num)]
+        for p, pim_sys in enumerate(root.pim_system):
+            PIM.connect_to_host_system(options, test_sys, pim_sys, p)
+        root.se_mode_systems_name = [pim_sys.get_name() for pim_sys in root.pim_system]
 
 if options.timesync:
     root.time_sync_enable = True

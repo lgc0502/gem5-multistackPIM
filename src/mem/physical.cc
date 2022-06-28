@@ -85,7 +85,7 @@ PhysicalMemory::PhysicalMemory(const string& _name,
         // only add the memory if it is part of the global address map
         if (m->isInAddrMap()) {
             memories.push_back(m);
-
+            
             // calculate the total size once and for all
             size += m->size();
 

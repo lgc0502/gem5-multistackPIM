@@ -123,6 +123,7 @@ System::System(Params *p)
     // add self to global system list
     systemList.push_back(this);
 
+    warn("----------%s----------", name());
 #if USE_KVM
     if (kvmVM) {
         kvmVM->setSystem(this);
@@ -209,7 +210,7 @@ System::System(Params *p)
 
     // Set back pointers to the system in all memories
     for (int x = 0; x < params()->memories.size(); x++)
-        params()->memories[x]->system(this);
+        params()->memories[x]->system(this); 
 
     // Check physmem and set physmemStartAddr in SE mode
     if (!FullSystem || SEModeSystem::belongSEsys(this)) {
@@ -428,6 +429,7 @@ System::memSize() const
     return physmem.totalSize();
 }
 
+// GCDebug : freeMemSize only used in pim se system?
 Addr
 System::freeMemSize() const
 {

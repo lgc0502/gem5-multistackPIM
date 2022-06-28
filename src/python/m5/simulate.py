@@ -108,7 +108,6 @@ def instantiate(ckpt_dir=None):
             json_file.close()
         except ImportError:
             pass
-
     do_dot(root, options.outdir, options.dot_config)
 
     # Initialize the global statistics
